@@ -41,10 +41,11 @@ export function verifyToken(token) {
 
 /** Write the session cookie — the equivalent of `Auth::guard(...)->login()`. */
 export function setAuthCookie(res, token, remember = false) {
+  const isCrossSite = (config.app.clientUrl && config.app.clientUrl.startsWith('https://')) || config.app.env === 'production' || process.env.NODE_ENV === 'production';
   res.cookie(config.auth.cookieName, token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: config.app.env === 'production',
+    sameSite: isCrossSite ? 'none' : 'lax',
+    secure: isCrossSite,
     maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : 120 * 60 * 1000,
     path: '/',
   });
@@ -52,7 +53,12 @@ export function setAuthCookie(res, token, remember = false) {
 
 /** `Auth::guard(...)->logout()` + `session()->invalidate()`. */
 export function clearAuthCookie(res) {
-  res.clearCookie(config.auth.cookieName, { path: '/' });
+  const isCrossSite = (config.app.clientUrl && config.app.clientUrl.startsWith('https://')) || config.app.env === 'production' || process.env.NODE_ENV === 'production';
+  res.clearCookie(config.auth.cookieName, {
+    path: '/',
+    sameSite: isCrossSite ? 'none' : 'lax',
+    secure: isCrossSite,
+  });
 }
 
 /**

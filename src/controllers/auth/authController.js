@@ -66,6 +66,7 @@ async function loginAs(guard, req, res, { extraConditions = {}, invalidMessage }
 
   return res.json({
     success: true,
+    token,
     guard,
     user,
     redirect: DASHBOARD_BY_GUARD[guard],
@@ -106,6 +107,7 @@ export async function patientLogin(req, res) {
     req.auth = { user, guard, userType: GUARDS[guard].type };
     return res.json({
       success: true,
+      token,
       requiresOtp: false,
       guard,
       user,
@@ -183,6 +185,7 @@ export async function patientLoginOtp(req, res) {
 
   return res.json({
     success: true,
+    token,
     guard,
     user: patient,
     redirect: DASHBOARD_BY_GUARD[guard],
@@ -234,6 +237,7 @@ export async function patientRegister(req, res) {
 
   return res.status(201).json({
     success: true,
+    token,
     guard: 'patient',
     user: patient,
     redirect: DASHBOARD_BY_GUARD.patient,
@@ -256,6 +260,7 @@ export async function globalLogin(req, res) {
 
     return res.json({
       success: true,
+      token,
       guard,
       user,
       redirect: DASHBOARD_BY_GUARD[guard],

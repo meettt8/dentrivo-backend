@@ -19,7 +19,23 @@ const app = express();
 
 app.set('trust proxy', 1);
 
-app.use(cors({ origin: config.app.clientUrl, credentials: true }));
+const allowedOrigins = new Set(config.app.allowedOrigins || []);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.has(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:')
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 
 // Keep the raw body so the Razorpay webhook signature can be verified.
 app.use(express.json({
@@ -44,6 +60,13 @@ app.use('/api', rateLimit(600, 1));
 
 // Equivalent of Laravel's global `web` middleware group.
 app.use(resolveAuth);
+
+app.get('/', (req, res) => res.json({
+  status: 'ok',
+  name: config.app.name,
+  message: 'Dentrivo API is running',
+  frontend: config.app.clientUrl,
+}));
 
 app.get('/up', (req, res) => res.json({ status: 'ok' }));
 

@@ -7,7 +7,10 @@ import { clearAuthCookie, resolveUserFromToken } from '../utils/auth.js';
  */
 export async function resolveAuth(req, res, next) {
   req.auth = null;
-  const token = req.cookies?.[config.auth.cookieName];
+  let token = req.cookies?.[config.auth.cookieName];
+  if (!token && req.headers?.authorization?.startsWith('Bearer ')) {
+    token = req.headers.authorization.slice(7).trim();
+  }
   if (!token) return next();
 
   const resolved = await resolveUserFromToken(token);

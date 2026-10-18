@@ -1,13 +1,43 @@
 import 'dotenv/config';
 
+function normalizeOrigin(url) {
+  if (!url) return '';
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url.replace(/\/+$/, '');
+  }
+}
+
+const rawClientUrl = process.env.CLIENT_URL || 'https://dentrivo-frontend.vercel.app';
+const clientUrl = normalizeOrigin(rawClientUrl) || 'https://dentrivo-frontend.vercel.app';
+
+const configuredOrigins = rawClientUrl
+  .split(',')
+  .map((u) => normalizeOrigin(u.trim()))
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(
+  new Set([
+    clientUrl,
+    ...configuredOrigins,
+    'https://dentrivo-frontend.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+  ])
+);
+
 const config = {
   app: {
     name: process.env.APP_NAME || 'Dentrivo',
     env: process.env.APP_ENV || 'local',
     debug: process.env.APP_DEBUG === 'true',
-    url: process.env.APP_URL || 'http://localhost:5173',
+    url: process.env.APP_URL || clientUrl,
     port: Number(process.env.PORT || 8000),
-    clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+    clientUrl,
+    allowedOrigins,
   },
   db: {
     uri: process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dentrivo',
