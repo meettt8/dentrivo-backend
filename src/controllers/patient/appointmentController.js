@@ -70,6 +70,19 @@ export async function store(req, res) {
     .add(treatment?.duration_mins ?? 30, 'minute')
     .format('HH:mm');
 
+  // --- Slot conflict check ---
+  const baseTime = String(req.body.start_time).substring(0, 5);
+  const conflicting = await Appointment.findOne({
+    appointment_date: toDateString(req.body.appointment_date),
+    start_time: { in: [baseTime, `${baseTime}:00`] },
+    status: { ne: 'cancelled' },
+  });
+  if (conflicting) {
+    throw new ValidationError({
+      start_time: [`The ${baseTime} slot on ${req.body.appointment_date} is already booked. Please choose a different time.`],
+    });
+  }
+
   const bookedVia = req.body.booked_via || (req.body.notes?.includes('Chatbot') ? 'ai_chat' : 'patient');
 
   const appointment = await Appointment.create({

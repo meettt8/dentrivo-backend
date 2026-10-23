@@ -1,12 +1,27 @@
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
+import timezone from 'dayjs/plugin/timezone.js';
+import utc from 'dayjs/plugin/utc.js';
 import {
   AiInteractionLog, Appointment, Conversation, Doctor, Patient, Treatment, WorkingHour,
 } from '../models/index.js';
 import notificationService from './NotificationService.js';
 import { nextPatientCode } from '../controllers/auth/authController.js';
+import {
+  bookSlotAtomic,
+  findNextAvailableSlot,
+  getAvailableSlots,
+  getDaySchedule,
+  nowIST,
+  to12h,
+  toMinutes,
+} from './AppointmentIntelligenceService.js';
 
 dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ = 'Asia/Kolkata';
 
 /**
  * AI-EXT-01 to AI-EXT-06: AI Processing Pipeline
@@ -15,7 +30,10 @@ dayjs.extend(customParseFormat);
 
 /** Known intents the AI can classify. */
 const INTENTS = {
+  book_appointment: ['book', 'appointment', 'schedule', 'reserve', 'slot', 'book me', 'need appointment'],
   booking: ['book', 'appointment', 'schedule', 'reserve', 'slot'],
+  get_daily_schedule: ['show schedule', 'my schedule', 'appointments today', 'what appointments', 'show today', 'schedule for', 'show appointments', 'list appointments', 'agenda', 'my appointments', 'how many appointments', 'booked for today', 'booked for tomorrow'],
+  check_availability: ['available slots', 'free slots', 'which slots', 'what slots', 'any openings', 'open slots', 'available times', 'when can i', 'what time is available', 'availability'],
   cancellation: ['cancel', 'remove', 'delete appointment', 'not coming'],
   reschedule: ['reschedule', 'change time', 'change date', 'move appointment'],
   faq: ['hours', 'location', 'address', 'fees', 'services', 'treatment', 'cost'],
@@ -270,15 +288,26 @@ class AiEngineService {
       entities.year_specified = Boolean(match[3]);
     }
 
-    const relativeDate = input.match(/\b(today|tomorrow|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    const relativeDate = input.match(/\b(day after tomm?or+ow|today|tomm?or+ow|tmrw|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
     if (relativeDate) {
-      entities.date_reference = relativeDate[1].toLowerCase();
+      let rawRef = relativeDate[1].toLowerCase().replace(/tomm+or+ow/g, 'tomorrow');
+      if (rawRef === 'tmrw') rawRef = 'tomorrow';
+      entities.date_reference = rawRef;
       entities.year_specified = true;
     }
 
     const time = input.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
       || input.match(/\b(\d{1,2})\s*:\s*(\d{2})\s*(am|pm)?\b/i);
     if (time) entities.time = time[0];
+
+    // startAfter: "after 11 AM", "after 2:30 pm", "after 11"
+    const afterMatch = input.match(/\bafter\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
+    if (afterMatch) entities.startAfter = afterMatch[1].trim();
+
+    // "next available", "earliest available", "first available"
+    if (/\b(next available|earliest available|first available|any available|earliest slot|next slot)\b/i.test(input)) {
+      entities.autoSelect = true;
+    }
 
     const timePreference = input.match(/\b(morning|afternoon|evening)\b/i);
     if (timePreference) entities.time_preference = timePreference[1].toLowerCase();
@@ -389,14 +418,19 @@ class AiEngineService {
   /** Generate a response based on the detected intent. */
   async generateResponse(intent, entities, conversation, userInput = '') {
     switch (intent) {
+      case 'book_appointment':
       case 'booking':
-        return this.bookingResponse(entities, conversation);
+        return this.bookingResponse(entities, conversation, userInput);
+      case 'get_daily_schedule':
+        return this.scheduleResponse(entities, conversation);
+      case 'check_availability':
+        return this.availabilityResponse(entities, conversation);
       case 'cancellation':
         return "I can help you cancel your appointment. Could you please confirm which appointment you'd like to cancel? You can share the date or doctor's name.";
       case 'reschedule':
         return "Sure, I can help you reschedule. Please share your preferred new date and time, and I'll check availability for you.";
       case 'greeting': {
-        return 'Hello! 👋 Welcome to Smile Dental Clinic. How can I help you today? '
+        return 'Hello! 👋 Welcome to Dentrivo Dental Clinic. How can I help you today? '
           + 'I can assist with booking appointments, checking schedules, or answering questions about our services.';
       }
       case 'status_check':
@@ -427,6 +461,94 @@ class AiEngineService {
         return this.confirmationResponse(entities, conversation);
       default:
         return "I'm here to help! You can ask me about appointment booking, clinic hours, services, or any other questions. What would you like to know?";
+    }
+  }
+
+  /** GET_DAILY_SCHEDULE: Show appointments for a requested date */
+  async scheduleResponse(entities, conversation) {
+    try {
+      const memory = conversation.context_memory ?? {};
+      const collected = memory.collected_entities ?? {};
+      const dateRef = entities.date_reference ?? collected.date_reference ?? null;
+      const dateStr = entities.date ?? collected.date ?? null;
+
+      let resolvedDate;
+      if (dateRef) {
+        resolvedDate = this.resolveRelativeDateIST(dateRef);
+      } else if (dateStr) {
+        const parsed = this.parseDateTime(dateStr, '00:00');
+        resolvedDate = parsed ? parsed.format('YYYY-MM-DD') : nowIST().format('YYYY-MM-DD');
+      } else {
+        resolvedDate = nowIST().format('YYYY-MM-DD');
+      }
+
+      const patientId = conversation.patient_id ?? null;
+      const schedule  = await getDaySchedule(resolvedDate, { patientId });
+
+      // Store date in context so follow-ups ("book one after 11 AM") can use it
+      const newMemory = { ...memory, collected_entities: { ...collected, date: resolvedDate, date_reference: null } };
+      await Conversation.update(conversation.id, { context_memory: newMemory });
+      conversation.context_memory = newMemory;
+
+      if (schedule.appointments.length === 0) {
+        return `📅 <strong>Schedule for ${schedule.label}:</strong><br><br>`
+          + `You have no appointments scheduled for this date.<br>`
+          + `<em>Would you like to book one? Just say "Book an appointment" or "Book one after 11 AM".</em>`;
+      }
+
+      const rows = schedule.appointments.map((a, i) =>
+        `<strong>${i + 1}. ${a.time12h}</strong> — <strong>${a.treatment}</strong><br>`
+        + `&nbsp;&nbsp;&nbsp;👨‍⚕️ ${a.doctor_name} | `
+        + `<span style="background:${statusColor(a.status)};color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600">${capitalize(a.status)}</span>`
+      ).join('<br><br>');
+
+      return `📅 <strong>Your Appointments for ${schedule.label}</strong> (${schedule.appointments.length} total):<br><br>`
+        + `${rows}<br><br>`
+        + `<em>Say "Book an appointment after 11 AM" or "What slots are free?" to schedule a new visit.</em>`;
+    } catch (err) {
+      console.error('scheduleResponse error:', err);
+      return 'I had trouble fetching your schedule. Please try again.';
+    }
+  }
+
+  /** CHECK_AVAILABILITY: Show free slots for a date */
+  async availabilityResponse(entities, conversation) {
+    try {
+      const memory    = conversation.context_memory ?? {};
+      const collected = memory.collected_entities ?? {};
+      const dateRef   = entities.date_reference ?? collected.date_reference ?? null;
+      const dateStr   = entities.date ?? collected.date ?? null;
+
+      let resolvedDate;
+      if (dateRef) {
+        resolvedDate = this.resolveRelativeDateIST(dateRef);
+      } else if (dateStr) {
+        const parsed = this.parseDateTime(dateStr, '00:00');
+        resolvedDate = parsed ? parsed.format('YYYY-MM-DD') : nowIST().format('YYYY-MM-DD');
+      } else {
+        resolvedDate = nowIST().format('YYYY-MM-DD');
+      }
+
+      const slots = await getAvailableSlots(resolvedDate);
+      const labelDate = dayjs.tz(resolvedDate, 'YYYY-MM-DD', TZ).format('dddd, MMM D');
+
+      if (slots.length === 0) {
+        return `📅 There are <strong>no available slots</strong> on <strong>${labelDate}</strong>.<br>`
+          + `Would you like me to check the next available day?`;
+      }
+
+      const slotList = slots.map((s) => {
+        const [h, m] = s.split(':').map(Number);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+        return `<strong>${h12}:${String(m).padStart(2,'0')} ${ampm}</strong>`;
+      }).join(', ');
+
+      return `📅 <strong>Available slots on ${labelDate}:</strong><br><br>${slotList}<br><br>`
+        + `<em>To book, say something like "Book me at 11 AM" or "Book after 2 PM".</em>`;
+    } catch (err) {
+      console.error('availabilityResponse error:', err);
+      return 'I had trouble checking availability. Please try again.';
     }
   }
 
@@ -540,17 +662,40 @@ class AiEngineService {
         await Conversation.update(conversation.id, { patient_id: patientId });
       }
 
-      const newAppointment = await Appointment.create({
-        patient_id: patientId,
-        doctor_id: doctor.id,
-        treatment_id: treatment?.id ?? null,
-        appointment_date: requestedTime.format('YYYY-MM-DD'),
-        start_time: requestedTime.format('HH:mm:ss'),
-        end_time: requestedTime.add(30, 'minute').format('HH:mm:ss'),
-        status: 'pending',
-        booked_via: 'ai_chat',
-        notes: `Automatically booked via AI Chat Assistant as ${titleCase(treatmentName)}`,
-      });
+      // Use bookSlotAtomic for concurrency-safe insert
+      const pendingSlot = collected.pendingSlot ?? requestedTime.format('HH:mm');
+      const apptDate    = collected.date ?? requestedTime.format('YYYY-MM-DD');
+      let newAppointment;
+      try {
+        newAppointment = await bookSlotAtomic({
+          patientId,
+          doctorId:    doctor.id,
+          treatmentId: treatment?.id ?? null,
+          dateStr:     apptDate,
+          startTime:   pendingSlot,
+          bookedVia:   'ai_chat',
+          notes:       `Automatically booked via AI Chat as ${titleCase(treatmentName)}`,
+        });
+      } catch (slotErr) {
+        if (slotErr.code === 'SLOT_TAKEN') {
+          // Try finding next free slot
+          const retry = await findNextAvailableSlot(apptDate, toMinutes(pendingSlot));
+          if (!retry.slot) {
+            return `I'm sorry, the ${pendingSlot} slot on ${apptDate} was just taken and there are no further slots that day. Please try another date.`;
+          }
+          newAppointment = await bookSlotAtomic({
+            patientId,
+            doctorId:    doctor.id,
+            treatmentId: treatment?.id ?? null,
+            dateStr:     retry.isNextDay ? retry.date : apptDate,
+            startTime:   retry.slot,
+            bookedVia:   'ai_chat',
+            notes:       `Booked via AI Chat (auto-advanced, original slot was taken)`,
+          });
+        } else {
+          throw slotErr;
+        }
+      }
 
       try {
         const patientObj = patientId ? await Patient.findById(patientId) : null;
@@ -586,137 +731,168 @@ class AiEngineService {
     }
   }
 
-  async bookingResponse(entities, conversation) {
+  async bookingResponse(entities, conversation, userInput = '') {
     const collected = conversation.context_memory?.collected_entities ?? {};
-    const missing = [];
 
-    if (!collected.date && !collected.date_reference) missing.push('preferred date');
-    if (!collected.time && !collected.time_preference) missing.push('preferred time');
-    if (!collected.treatment) missing.push('type of treatment');
+    // Merge newly extracted entities into collected
+    const merged = { ...collected, ...entities };
 
-    if (missing.length > 0) {
-      let example = '';
-      if (missing.includes('preferred date')) {
-        example += ` (e.g., 'tomorrow' or '${dayjs().add(1, 'day').format('MMM DD')}')`;
-      }
-      if (missing.includes('preferred time')) example += " (e.g., '10:00 AM')";
-
-      if (missing.includes('type of treatment') && missing.length === 1) {
-        const knownDate = this.parseDateTime(collected.date ?? collected.date_reference ?? 'tomorrow', '00:00');
-        const knownTime = this.parseDateTime('today', collected.time ?? collected.time_preference ?? '10:00 AM');
-        return `Your appointment for ${knownDate ? knownDate.format('MMM DD') : ''} at `
-          + `${knownTime ? knownTime.format('h:mm A') : ''} is almost ready! 🦷<br><br>`
-          + 'Which treatment do you need? Please choose one:<br>'
-          + treatmentPickerTable();
-      }
-
-      const missingList = missing.length > 1
-        ? `${missing.slice(0, -1).join(', ')}, and ${missing[missing.length - 1]}`
-        : missing[0];
-      return `I'd love to help you book an appointment! Could you please share your ${missingList}?${example}`;
+    // --- Determine date ---
+    const dateRef = merged.date_reference ?? null;
+    const dateRaw = merged.date ?? null;
+    let resolvedDateStr = null;
+    if (dateRef) {
+      resolvedDateStr = this.resolveRelativeDateIST(dateRef);
+    } else if (dateRaw) {
+      const p = this.parseDateTime(dateRaw, '00:00');
+      resolvedDateStr = p ? p.format('YYYY-MM-DD') : null;
     }
 
-    try {
-      const dateStr = collected.date ?? collected.date_reference ?? 'tomorrow';
-      const timeStr = collected.time ?? collected.time_preference ?? '10:00';
+    // If we still don't have a date, check the conversation context for a date set by schedule view
+    if (!resolvedDateStr && collected.date) {
+      resolvedDateStr = collected.date;
+    }
 
-      let requestedTime = this.parseDateTime(dateStr, timeStr);
-      if (!requestedTime) throw new Error('Unparseable date/time');
-      if (requestedTime.year() < new Date().getFullYear()) {
-        requestedTime = requestedTime.year(new Date().getFullYear());
-      }
+    // If no date at all, ask
+    if (!resolvedDateStr) {
+      return `I'd love to help you book an appointment! Could you please share your preferred date? (e.g., 'tomorrow' or '${dayjs().add(1, 'day').format('MMM DD')}')`;
+    }
 
-      if (requestedTime.isBefore(dayjs())) {
-        const memory = { ...(conversation.context_memory ?? {}) };
-        const next = { ...collected };
-        delete next.date;
-        delete next.date_reference;
-        delete next.time;
-        delete next.time_preference;
-        memory.collected_entities = next;
-        conversation.context_memory = memory;
-        conversation.extracted_entities = next;
-        await Conversation.update(conversation.id, {
-          context_memory: memory,
-          extracted_entities: next,
-        });
+    // --- Validate date ---
+    const todayStr = nowIST().format('YYYY-MM-DD');
+    if (resolvedDateStr < todayStr) {
+      return `I'm sorry, I cannot book an appointment for a past date (${resolvedDateStr}). Could you please specify a future date?`;
+    }
+    const dow = dayjs.tz(resolvedDateStr, 'YYYY-MM-DD', TZ).day();
+    if (dow === 0) {
+      return `I'm sorry, but our clinic is closed on Sundays (${resolvedDateStr}). Please select another day.`;
+    }
 
-        return 'I apologize, but I cannot book an appointment for a past date or time '
-          + `(${requestedTime.format('MMM DD, YYYY hh:mm A')}). `
-          + 'Could you please specify a future date and time?';
-      }
+    // --- Determine slot ---
+    // Priority: startAfter > autoSelect > requestedTime
+    const startAfterRaw = merged.startAfter ?? null;
+    const autoSelect    = merged.autoSelect ?? false;
+    const reqTimeRaw    = merged.time ?? merged.time_preference ?? null;
 
-      const dayOfWeek = requestedTime.day();
-      const doctor = await Doctor.findOne({ is_active: 1 });
+    let afterTimeMins = null;
+    let slotLabel     = '';
 
-      if (dayOfWeek === 0) {
-        return `I'm sorry, but our clinic is closed on Sundays (${requestedTime.format('MMM DD')}). `
-          + 'Please select another day between Monday and Saturday.';
-      }
+    if (startAfterRaw) {
+      afterTimeMins = toMinutes(normalizeTimeStr(startAfterRaw));
+      slotLabel = ` after ${startAfterRaw}`;
+    } else if (autoSelect) {
+      afterTimeMins = null;
+      slotLabel = ' (earliest available)';
+    } else if (reqTimeRaw) {
+      // requested_time: treat as minimum (include the slot itself if available)
+      const reqMins = toMinutes(normalizeTimeStr(reqTimeRaw));
+      afterTimeMins = reqMins - 30; // 30 min before so the exact slot is included
+      if (afterTimeMins < 0) afterTimeMins = null;
+      slotLabel = ` at ${reqTimeRaw}`;
+    }
 
-      const workingHour = doctor
-        ? await WorkingHour.findOne({ doctor_id: doctor.id, day_of_week: dayOfWeek })
-        : null;
-      const openTime = workingHour?.open_time ?? '09:00:00';
-      const closeTime = '17:00:00';
+    // --- Find next available slot ---
+    const result = await findNextAvailableSlot(resolvedDateStr, afterTimeMins);
 
-      const requestedTimeOnly = requestedTime.format('HH:mm:ss');
-      if (requestedTimeOnly < openTime || requestedTimeOnly > closeTime) {
-        return 'Our working hours are from 9:00 AM to 5:00 PM. Could you please select a time within this range?';
-      }
+    if (!result.slot) {
+      return `I'm sorry, there are no available slots${slotLabel} on ${formatDateFull(resolvedDateStr)}. `
+        + `Would you like me to check the next available date?`;
+    }
 
-      const treatmentName = collected.treatment ?? 'general consultation';
+    const finalDate  = result.isNextDay ? result.date : resolvedDateStr;
+    const finalSlot  = result.slot;
+    const slot12h    = to12hLocal(finalSlot);
+    const dateLabel  = formatDateFull(finalDate);
+    const treatmentName = merged.treatment ?? collected.treatment ?? 'general consultation';
+    const isGuest    = !conversation.patient_id;
+
+    // If the slot moved to next day, inform the user
+    const nextDayNote = result.isNextDay
+      ? `<br><em>⚠️ No slots available${slotLabel} on ${formatDateFull(resolvedDateStr)}, so I found the next available slot on ${dateLabel}.</em>`
+      : '';
+
+    // --- Guest: require personal details ---
+    if (isGuest) {
+      const missingGuestFields = [];
+      if (!merged.name)        missingGuestFields.push('Full Name');
+      if (!merged.email)       missingGuestFields.push('Email Address');
+      if (!merged.age)         missingGuestFields.push('Age');
+      if (!merged.blood_group) missingGuestFields.push('Blood Group');
+      if (!merged.gender)      missingGuestFields.push('Gender');
+
       const memory = { ...(conversation.context_memory ?? {}) };
-      const isGuest = !conversation.patient_id;
+      // Save what we know
+      memory.collected_entities = {
+        ...merged,
+        date: finalDate,
+        date_reference: null,
+        pendingSlot: finalSlot,
+      };
+      await Conversation.update(conversation.id, { context_memory: memory });
+      conversation.context_memory = memory;
 
-      // When user books without login, ask them for their details
-      if (isGuest) {
-        const missingGuestFields = [];
-        if (!collected.name) missingGuestFields.push('Full Name');
-        if (!collected.email) missingGuestFields.push('Email Address');
-        if (!collected.age) missingGuestFields.push('Age');
-        if (!collected.blood_group) missingGuestFields.push('Blood Group');
-        if (!collected.gender) missingGuestFields.push('Gender');
-
-        if (missingGuestFields.length > 0) {
-          memory.pending_final_confirmation = false;
-          conversation.context_memory = memory;
-          await Conversation.update(conversation.id, { context_memory: memory });
-
-          const missingListStr = missingGuestFields.map((f) => `• <strong>${f}</strong>`).join('<br>');
-          return `Great! We have an opening for <strong>${titleCase(treatmentName)}</strong> on <strong>${requestedTime.format('MMM D')}</strong> at <strong>${requestedTime.format('h:mm A')}</strong>. 🦷<br><br>`
-            + `Since you are booking without logging in, please share your details to proceed:<br>`
-            + `${missingListStr}<br><br>`
-            + '<em>You can reply in one message, for example:<br>'
-            + 'Name: John Doe, Email: john@example.com, Age: 28, Blood Group: O+, Gender: Male</em>';
-        }
-      }
-
-      if (!memory.pending_final_confirmation) {
-        memory.pending_final_confirmation = true;
-        conversation.context_memory = memory;
+      if (missingGuestFields.length > 0) {
+        memory.pending_final_confirmation = false;
         await Conversation.update(conversation.id, { context_memory: memory });
+        const missingListStr = missingGuestFields.map((f) => `• <strong>${f}</strong>`).join('<br>');
+        return `Great! We found a slot for <strong>${titleCase(treatmentName)}</strong> on <strong>${dateLabel}</strong> at <strong>${slot12h}</strong>. 🦷${nextDayNote}<br><br>`
+          + `Since you are booking without logging in, please share your details to proceed:<br>`
+          + `${missingListStr}<br><br>`
+          + '<em>You can reply in one message, for example:<br>'
+          + 'Name: John Doe, Email: john@example.com, Age: 28, Blood Group: O+, Gender: Male</em>';
+      }
+    }
 
-        let guestSummary = '';
-        if (isGuest) {
-          guestSummary = `<br>• <strong>Patient:</strong> ${collected.name} (${collected.age} yrs, ${titleCase(collected.gender)})`
-            + `<br>• <strong>Blood Group:</strong> ${collected.blood_group}`
-            + `<br>• <strong>Email:</strong> ${collected.email}`;
-        }
+    // --- Show confirmation summary ---
+    const memory = { ...(conversation.context_memory ?? {}) };
+    memory.collected_entities = {
+      ...merged,
+      date: finalDate,
+      date_reference: null,
+      pendingSlot: finalSlot,
+    };
+    if (!memory.pending_final_confirmation) {
+      memory.pending_final_confirmation = true;
+      await Conversation.update(conversation.id, { context_memory: memory });
+      conversation.context_memory = memory;
 
-        return `Awesome! Here is your booking summary: 📋<br>`
-          + `• <strong>Treatment:</strong> ${titleCase(treatmentName)}<br>`
-          + `• <strong>Date & Time:</strong> ${requestedTime.format('MMM D')} at ${requestedTime.format('h:mm A')}`
-          + `${guestSummary}<br><br>`
-          + 'Would you like me to confirm this booking? (Reply <strong>\'Yes\'</strong> to confirm)';
+      let guestSummary = '';
+      if (isGuest) {
+        guestSummary = `<br>• <strong>Patient:</strong> ${merged.name} (${merged.age} yrs, ${titleCase(merged.gender ?? '')})`
+          + `<br>• <strong>Blood Group:</strong> ${merged.blood_group}`
+          + `<br>• <strong>Email:</strong> ${merged.email}`;
       }
 
-      return "Great! I'm ready when you are. Just say 'Yes' to confirm.";
-    } catch (error) {
-      console.error(`BOOKING_PREVIEW_ERROR: ${error.message}`);
-      return 'I apologize, but I had a little trouble understanding that date or time. '
-        + "Could you please specify it again clearly? (e.g., 'next Monday at 3 PM')";
+      return `${nextDayNote}📋 <strong>Booking Summary:</strong><br>`
+        + `• <strong>Treatment:</strong> ${titleCase(treatmentName)}<br>`
+        + `• <strong>Date & Time:</strong> ${dateLabel} at ${slot12h}`
+        + `${guestSummary}<br><br>`
+        + 'Would you like me to confirm this booking? (Reply <strong>\'Yes\'</strong> to confirm)';
     }
+
+    return "Great! I'm ready when you are. Just say 'Yes' to confirm.";
+  }
+
+  /** Resolve a relative date string to YYYY-MM-DD using IST timezone */
+  resolveRelativeDateIST(dateRef) {
+    let lower = (dateRef ?? '').toLowerCase().replace(/tomm+or+ow/g, 'tomorrow');
+    if (lower === 'tmrw') lower = 'tomorrow';
+    const now = nowIST().startOf('day');
+
+    if (lower === 'today') return now.format('YYYY-MM-DD');
+    if (lower === 'day after tomorrow') return now.add(2, 'day').format('YYYY-MM-DD');
+    if (lower === 'tomorrow') return now.add(1, 'day').format('YYYY-MM-DD');
+    if (lower === 'next week') return now.add(7, 'day').format('YYYY-MM-DD');
+
+    const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const wIdx = weekdays.indexOf(lower);
+    if (wIdx !== -1) {
+      let c = now.day(wIdx);
+      if (!c.isAfter(now)) c = c.add(7, 'day');
+      return c.format('YYYY-MM-DD');
+    }
+
+    return now.format('YYYY-MM-DD'); // fallback to today
   }
 
   parseDateTime(dateStr, timeStr) {
@@ -728,10 +904,12 @@ class AiEngineService {
   }
 
   resolveRelativeDate(value) {
-    const lower = value.toLowerCase();
-    const now = dayjs().startOf('day');
+    let lower = String(value ?? '').toLowerCase().replace(/tomm+or+ow/g, 'tomorrow');
+    if (lower === 'tmrw') lower = 'tomorrow';
+    const now = dayjs().tz(TZ).startOf('day');
 
     if (lower === 'today') return now;
+    if (lower === 'day after tomorrow') return now.add(2, 'day');
     if (lower === 'tomorrow') return now.add(1, 'day');
     if (lower === 'next week') return now.add(7, 'day');
 
@@ -803,6 +981,29 @@ class AiEngineService {
 
 function titleCase(value) {
   return String(value).replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function to12hLocal(timeStr) {
+  return to12h(timeStr);
+}
+
+function formatDateFull(dateStr) {
+  return dayjs.tz(dateStr, 'YYYY-MM-DD', TZ).format('MMMM D, YYYY');
+}
+
+function statusColor(status) {
+  switch (String(status).toLowerCase()) {
+    case 'confirmed': return '#10b981';
+    case 'completed': return '#3b82f6';
+    case 'cancelled': return '#ef4444';
+    case 'pending':
+    default: return '#f59e0b';
+  }
+}
+
+function capitalize(value) {
+  if (!value) return '';
+  return String(value).charAt(0).toUpperCase() + String(value).slice(1);
 }
 
 export default new AiEngineService();

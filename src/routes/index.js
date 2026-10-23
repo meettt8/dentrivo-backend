@@ -26,6 +26,7 @@ import * as patientDashboard from '../controllers/patient/dashboardController.js
 import * as patientAppointments from '../controllers/patient/appointmentController.js';
 import * as patientProfile from '../controllers/patient/profileController.js';
 import * as patientPortal from '../controllers/patient/portalController.js';
+import * as patientChat from '../controllers/patient/patientChatController.js';
 
 import * as patientDocumentController from '../controllers/patientDocumentController.js';
 
@@ -149,6 +150,9 @@ router.get('/patient/invoices', requirePatient, patientPortal.invoices);
 router.get('/patient/chat', requirePatient, patientDashboard.chat);
 router.get('/patient/chat/history', requirePatient, patientDashboard.getHistory);
 router.post('/patient/chat', requirePatient, patientDashboard.sendMessage);
+router.get('/patient/chat/slots', requirePatient, patientChat.getSlots);
+router.get('/patient/chat/schedule', requirePatient, patientChat.getSchedule);
+router.post('/patient/chat/book-slot', requirePatient, patientChat.bookSlot);
 
 // ── PATIENT DOCUMENTS & DENTAL X-RAYS MANAGEMENT API ─────────────────
 router.post(

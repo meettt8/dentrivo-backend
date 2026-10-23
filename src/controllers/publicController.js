@@ -169,6 +169,20 @@ export async function bookAppointment(req, res) {
 
   const bookedVia = req.body.booked_via || (req.body.notes?.includes('Chatbot') ? 'ai_chat' : 'public_website');
 
+  // --- Slot conflict check ---
+  const baseTime = startTime.substring(0, 5);
+  const conflicting = await Appointment.findOne({
+    appointment_date: req.body.appointment_date,
+    start_time: { in: [baseTime, formattedStartTime] },
+    status: { ne: 'cancelled' },
+  });
+  if (conflicting) {
+    return res.status(422).json({
+      message: `The ${req.body.start_time} slot on ${req.body.appointment_date} is already booked. Please choose a different time.`,
+      errors: { start_time: ['This time slot is already taken. Please pick another slot.'] },
+    });
+  }
+
   const appointment = await Appointment.create({
     patient_id: patient.id,
     doctor_id: doctorId,
