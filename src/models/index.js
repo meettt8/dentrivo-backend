@@ -155,9 +155,27 @@ export const WebhookDelivery = new Table('webhook_deliveries', {
   casts: { payload: 'json' },
 });
 
+// ── CMS Dynamic Website Content Models ────────────────────────────────
+export const ServiceCard = new Table('service_cards', {
+  casts: { is_active: 'boolean', display_order: 'number' },
+});
+
+export const WhyChooseUsCard = new Table('why_choose_us_cards', {
+  casts: { is_active: 'boolean', display_order: 'number' },
+});
+
+export const PrivacyPolicy = new Table('privacy_policies', {
+  casts: { sections: 'json' },
+});
+
+export const CookiePolicy = new Table('cookie_policies', {
+  casts: { sections: 'json' },
+});
+
 /** Which table backs each guard, for the polymorphic audit/role columns. */
 export const TABLE_BY_TYPE = {
   ClinicAdmin,
   Doctor,
   Patient,
 };
+

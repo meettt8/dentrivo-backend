@@ -37,6 +37,11 @@ async function run() {
     { collection: 'medical_files', key: { patient_id: 1 }, options: {} },
     { collection: 'conversations', key: { patient_id: 1, status: 1 }, options: {} },
     { collection: 'messages', key: { conversation_id: 1 }, options: {} },
+    { collection: 'service_cards', key: { is_active: 1, display_order: 1 }, options: {} },
+    { collection: 'service_cards', key: { slug: 1 }, options: { unique: true } },
+    { collection: 'why_choose_us_cards', key: { is_active: 1, display_order: 1 }, options: {} },
+    { collection: 'privacy_policies', key: { status: 1 }, options: {} },
+    { collection: 'cookie_policies', key: { status: 1 }, options: {} },
   ];
 
   let count = 0;

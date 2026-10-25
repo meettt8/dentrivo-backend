@@ -4,10 +4,13 @@
 import 'dotenv/config';
 import { connectDatabase, disconnectDatabase, explainConnectionError, getDb } from '../config/db.js';
 import {
-  Appointment, Clinic, ClinicAdmin, Doctor, Invoice, InvoiceItem,
-  NotificationTemplate, Patient, Permission, Role, RolePermission,
-  Treatment, WorkflowRule, WorkingHour,
+  Appointment, Clinic, ClinicAdmin, CookiePolicy, Doctor, Invoice, InvoiceItem,
+  NotificationTemplate, Patient, Permission, PrivacyPolicy, Role, RolePermission,
+  ServiceCard, Treatment, WhyChooseUsCard, WorkflowRule, WorkingHour,
 } from '../models/index.js';
+import {
+  DEFAULT_COOKIE_POLICY, DEFAULT_PRIVACY_POLICY, DEFAULT_SERVICES, DEFAULT_WHY_CHOOSE_US,
+} from '../utils/defaultCmsData.js';
 import { hashPassword } from '../utils/auth.js';
 import { padLeft, toDateString } from '../utils/helpers.js';
 
@@ -19,6 +22,7 @@ const TABLES = [
   'working_hours', 'treatments', 'patients', 'doctors', 'clinic_admins',
   'user_roles', 'role_permission', 'roles', 'permissions', 'notification_templates',
   'webhook_deliveries', 'webhook_endpoints', 'api_keys', 'clinics',
+  'service_cards', 'why_choose_us_cards', 'privacy_policies', 'cookie_policies',
 ];
 
 function daysAgo(days) {
@@ -407,7 +411,19 @@ async function run() {
   await seedPermissions();
   await seedWorkflows();
 
-  console.log('Dentrivo single-clinic seeded successfully!');
+  // Seed CMS Dynamic Content
+  for (const s of DEFAULT_SERVICES) {
+    // eslint-disable-next-line no-await-in-loop
+    await ServiceCard.create(s);
+  }
+  for (const w of DEFAULT_WHY_CHOOSE_US) {
+    // eslint-disable-next-line no-await-in-loop
+    await WhyChooseUsCard.create(w);
+  }
+  await PrivacyPolicy.create(DEFAULT_PRIVACY_POLICY);
+  await CookiePolicy.create(DEFAULT_COOKIE_POLICY);
+
+  console.log('Dentrivo single-clinic seeded successfully with Dynamic CMS Content!');
   console.log('Receptionist: dr.priya@dentalai.com / password');
   console.log('Doctor:       rahul@dentalai.com / password');
   console.log('Patient:      amit@example.com / password');

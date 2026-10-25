@@ -3,6 +3,7 @@ import multer from 'multer';
 
 import * as authController from '../controllers/auth/authController.js';
 import * as publicController from '../controllers/publicController.js';
+import * as publicCms from '../controllers/publicCmsController.js';
 import * as paymentWebhookController from '../controllers/api/paymentWebhookController.js';
 
 import * as adminDashboard from '../controllers/admin/dashboardController.js';
@@ -17,6 +18,7 @@ import * as fileController from '../controllers/admin/fileController.js';
 import * as workflowController from '../controllers/admin/workflowController.js';
 import * as systemController from '../controllers/admin/systemController.js';
 import * as adminChatController from '../controllers/admin/adminChatController.js';
+import * as adminCms from '../controllers/admin/cmsController.js';
 
 import * as doctorDashboard from '../controllers/doctor/dashboardController.js';
 import * as doctorAppointments from '../controllers/doctor/appointmentController.js';
@@ -47,6 +49,12 @@ router.get('/public/treatments', publicController.publicTreatments);
 router.get('/public/doctors', publicController.publicDoctors);
 router.post('/public/book-appointment', publicController.bookAppointment);
 router.post('/public/chat', publicController.publicChat);
+
+// ── Public Dynamic Website Content (CMS) ──────────────────────────────
+router.get(['/services', '/public/services'], publicCms.getPublicServices);
+router.get(['/why-choose-us', '/public/why-choose-us'], publicCms.getPublicWhyChooseUs);
+router.get(['/privacy-policy', '/public/privacy-policy'], publicCms.getPublicPrivacyPolicy);
+router.get(['/cookie-policy', '/public/cookie-policy'], publicCms.getPublicCookiePolicy);
 
 // ── Session, Auth & Password Reset ────────────────────────────────────
 router.get('/session', authController.session);
@@ -120,6 +128,37 @@ router.get('/admin/system/audit-logs', requireClinicAdmin, systemController.audi
 router.get('/admin/system/notification-templates', requireClinicAdmin, systemController.notificationTemplates);
 router.post('/admin/system/notification-templates', requireClinicAdmin, systemController.saveNotificationTemplate);
 router.get('/admin/system/notifications-log', requireClinicAdmin, systemController.notificationsLog);
+
+// ── CMS-01 to CMS-04: Admin Dynamic Website Content Management ───────
+// Services Cards Management
+router.get('/admin/services', requireClinicAdmin, adminCms.getServices);
+router.get('/admin/services/:id', requireClinicAdmin, adminCms.getServiceById);
+router.post('/admin/services', requireClinicAdmin, adminCms.createService);
+router.put('/admin/services/:id', requireClinicAdmin, adminCms.updateService);
+router.delete('/admin/services/:id', requireClinicAdmin, adminCms.deleteService);
+router.patch('/admin/services/:id/toggle', requireClinicAdmin, adminCms.toggleServiceStatus);
+
+// Why Choose Us Cards Management
+router.get('/admin/why-choose-us', requireClinicAdmin, adminCms.getWhyChooseUs);
+router.get('/admin/why-choose-us/:id', requireClinicAdmin, adminCms.getWhyChooseUsById);
+router.post('/admin/why-choose-us', requireClinicAdmin, adminCms.createWhyChooseUs);
+router.put('/admin/why-choose-us/:id', requireClinicAdmin, adminCms.updateWhyChooseUs);
+router.delete('/admin/why-choose-us/:id', requireClinicAdmin, adminCms.deleteWhyChooseUs);
+router.patch('/admin/why-choose-us/:id/toggle', requireClinicAdmin, adminCms.toggleWhyChooseUsStatus);
+
+// Privacy Policy Page Management
+router.get('/admin/privacy-policy', requireClinicAdmin, adminCms.getPrivacyPolicyAdmin);
+router.put('/admin/privacy-policy', requireClinicAdmin, adminCms.updatePrivacyPolicy);
+router.post('/admin/privacy-policy/publish', requireClinicAdmin, adminCms.publishPrivacyPolicy);
+
+// Cookie Policy Page Management
+router.get('/admin/cookie-policy', requireClinicAdmin, adminCms.getCookiePolicyAdmin);
+router.put('/admin/cookie-policy', requireClinicAdmin, adminCms.updateCookiePolicy);
+router.post('/admin/cookie-policy/publish', requireClinicAdmin, adminCms.publishCookiePolicy);
+
+// CMS Media & Icon Upload
+router.post('/admin/cms/upload', requireClinicAdmin, upload.single('image'), adminCms.uploadMedia);
+
 
 // ── Doctor ────────────────────────────────────────────────────────────
 router.post('/doctor/login', authController.doctorLogin);
