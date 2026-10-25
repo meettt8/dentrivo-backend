@@ -172,6 +172,12 @@ export const CookiePolicy = new Table('cookie_policies', {
   casts: { sections: 'json' },
 });
 
+export const ContactPage = new Table('contact_pages', {
+  casts: { working_hours: 'json', features: 'json' },
+});
+
+export const ContactInquiry = new Table('contact_inquiries');
+
 /** Which table backs each guard, for the polymorphic audit/role columns. */
 export const TABLE_BY_TYPE = {
   ClinicAdmin,

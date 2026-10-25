@@ -166,6 +166,102 @@ async function run() {
   }
   console.log('PASS: Privacy policy published live');
 
+  // 8. Test Public Contact Us Page
+  console.log('Testing GET /api/contact-page...');
+  const resContact = mockRes();
+  await publicCms.getPublicContactPage({}, resContact);
+  if (!resContact.body?.success || !resContact.body?.page?.clinicName) {
+    throw new Error('Public contact page endpoint failed: ' + JSON.stringify(resContact.body));
+  }
+  console.log(`PASS: Public contact page returned "${resContact.body.page.heroTitle}" for "${resContact.body.page.clinicName}"`);
+
+  // 9. Test User Inquiry Submission
+  console.log('Testing POST /api/contact (submit inquiry)...');
+  const resInquiry = mockRes();
+  await publicCms.submitContactInquiry({
+    body: {
+      name: 'John Doe Testing',
+      email: 'john.test@example.com',
+      phone: '+91 98765 00000',
+      subject: 'Tooth Whitening Consultation',
+      message: 'Hello Dentrivo team, I would like to schedule a consultation regarding teeth whitening next Tuesday.',
+    },
+    ip: '127.0.0.1',
+    headers: { 'user-agent': 'CMS-Test-Runner' },
+  }, resInquiry);
+
+  if (resInquiry.statusCode !== 201 || !resInquiry.body?.inquiryId) {
+    throw new Error('Submit contact inquiry failed: ' + JSON.stringify(resInquiry.body));
+  }
+  const createdInquiryId = resInquiry.body.inquiryId;
+  console.log(`PASS: Contact inquiry created with ID ${createdInquiryId}`);
+
+  // 10. Test Admin Inquiries Management
+  console.log('Testing Admin GET /api/admin/contact-inquiries...');
+  const resAdminInquiries = mockRes();
+  await adminCms.getContactInquiries({ query: {} }, resAdminInquiries);
+  if (!resAdminInquiries.body?.success || !Array.isArray(resAdminInquiries.body?.inquiries)) {
+    throw new Error('Admin contact inquiries failed: ' + JSON.stringify(resAdminInquiries.body));
+  }
+  const foundInquiry = resAdminInquiries.body.inquiries.find((i) => i.id === createdInquiryId);
+  if (!foundInquiry) {
+    throw new Error('Created inquiry not found in admin inquiries list');
+  }
+  if (foundInquiry.recipientEmail !== 'noirr.ai13@gmail.com') {
+    throw new Error(`Inquiry recipient email expected noirr.ai13@gmail.com, got ${foundInquiry.recipientEmail}`);
+  }
+  console.log(`PASS: Inquiry found in admin list with recipient ${foundInquiry.recipientEmail}`);
+
+  // Test Update Inquiry Status
+  console.log('Testing Admin Update Inquiry Status to in_progress...');
+  const resStatus = mockRes();
+  await adminCms.updateContactInquiryStatus({ params: { id: createdInquiryId }, body: { status: 'in_progress' } }, resStatus);
+  if (!resStatus.body?.success || resStatus.body?.inquiry?.status !== 'in_progress') {
+    throw new Error('Update inquiry status failed: ' + JSON.stringify(resStatus.body));
+  }
+  console.log('PASS: Inquiry status updated to in_progress');
+
+  // Test Delete Inquiry
+  console.log('Testing Admin Delete Inquiry...');
+  const resDelInq = mockRes();
+  await adminCms.deleteContactInquiry({ params: { id: createdInquiryId } }, resDelInq);
+  if (!resDelInq.body?.success) {
+    throw new Error('Delete inquiry failed');
+  }
+  console.log('PASS: Inquiry deleted cleanly');
+
+  // 11. Test Admin Contact Page Update & Publish
+  console.log('Testing Admin Update Contact Page...');
+  const resAdminContact = mockRes();
+  await adminCms.updateContactPage({
+    body: {
+      heroBadge: 'Updated Badge',
+      heroTitle: 'Updated Contact Us Header',
+      heroSubtitle: 'Updated Contact Us Subtitle',
+      clinicName: 'Dentrivo Super Speciality',
+      recipientEmail: 'noirr.ai13@gmail.com',
+      workingHours: [
+        { days: 'Mon - Fri', hours: '9 AM - 6 PM', note: 'Standard' },
+      ],
+      features: [
+        { icon: 'bi-robot', title: 'AI Guided', description: 'Smart Dentistry' },
+      ],
+      status: 'draft',
+    },
+  }, resAdminContact);
+  if (!resAdminContact.body?.success || resAdminContact.body?.page?.heroTitle !== 'Updated Contact Us Header') {
+    throw new Error('Admin update contact page failed: ' + JSON.stringify(resAdminContact.body));
+  }
+  console.log('PASS: Admin contact page updated successfully');
+
+  // Publish
+  const resPubContact = mockRes();
+  await adminCms.publishContactPage({}, resPubContact);
+  if (!resPubContact.body?.success) {
+    throw new Error('Admin publish contact page failed');
+  }
+  console.log('PASS: Contact Us page published successfully');
+
   console.log('\n========================================');
   console.log('ALL CMS TESTS PASSED SUCCESSFULLY! ✅');
   console.log('========================================\n');

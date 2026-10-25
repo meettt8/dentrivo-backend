@@ -747,6 +747,163 @@ class NotificationService {
   async sendInApp(recipientId, message) {
     console.log(`In-app notification for user ${recipientId}: ${message}`);
   }
+
+  /**
+   * Dispatch Website Contact Inquiry Email to noirr.ai13@gmail.com
+   */
+  async sendContactInquiryNotification(inquiry) {
+    const targetEmail = (inquiry.recipient_email || inquiry.recipientEmail || 'noirr.ai13@gmail.com').trim();
+    const senderName = inquiry.name || 'Website Visitor';
+    const senderEmail = inquiry.email || 'N/A';
+    const senderPhone = inquiry.phone || 'N/A';
+    const inquirySubject = inquiry.subject || 'General Dental Inquiry';
+    const inquiryMessage = inquiry.message || '';
+    const dateStr = dayjs().format('dddd, MMMM D, YYYY [at] h:mm A');
+
+    const emailSubject = `[Dentrivo Inquiry] ${inquirySubject} — from ${senderName}`;
+
+    const textBody = `New Website Inquiry from Dentrivo Contact Us Page:\n\n`
+      + `Sender Name: ${senderName}\n`
+      + `Email: ${senderEmail}\n`
+      + `Phone: ${senderPhone}\n`
+      + `Subject: ${inquirySubject}\n`
+      + `Received On: ${dateStr}\n\n`
+      + `Message:\n${inquiryMessage}\n\n`
+      + `Dentrivo Dental AI Platform`;
+
+    const htmlBody = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Website Inquiry - Dentrivo</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f1f5f9; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:40px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:620px; background-color:#ffffff; border-radius:16px; border:1px solid #e2e8f0; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg, #0284c7 0%, #06b6d4 100%); padding:32px 30px; text-align:center;">
+              <span style="display:inline-block; background:rgba(255,255,255,0.22); color:#ffffff; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:4px 14px; border-radius:50px; margin-bottom:10px;">
+                New Contact Us Inquiry
+              </span>
+              <h1 style="color:#ffffff; margin:6px 0 0 0; font-size:24px; font-weight:800; letter-spacing:-0.5px;">
+                Dentrivo Dental Care
+              </h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 30px;">
+              <p style="font-size:15px; line-height:1.6; color:#475569; margin-top:0;">
+                A new inquiry has been submitted by a patient or visitor through the <strong>Dentrivo Contact Us</strong> page.
+              </p>
+
+              <table role="presentation" width="100%" style="background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0; margin:20px 0; border-collapse:collapse;">
+                <tr>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#64748b; width:32%; font-size:13px;">Full Name</td>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#0f172a; font-size:14px;">${senderName}</td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#64748b; font-size:13px;">Email Address</td>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; color:#0284c7; font-weight:600; font-size:14px;">
+                    <a href="mailto:${senderEmail}" style="color:#0284c7; text-decoration:none;">${senderEmail}</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#64748b; font-size:13px;">Phone Number</td>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-size:14px;">${senderPhone}</td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#64748b; font-size:13px;">Subject / Reason</td>
+                  <td style="padding:12px 18px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-weight:600; font-size:14px;">${inquirySubject}</td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 18px; font-weight:600; color:#64748b; font-size:13px;">Received Time</td>
+                  <td style="padding:12px 18px; color:#64748b; font-size:13px;">${dateStr}</td>
+                </tr>
+              </table>
+
+              <div style="margin-top:24px;">
+                <div style="font-size:13px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                  Message:
+                </div>
+                <div style="background:#ffffff; border-left:4px solid #06b6d4; border-radius:6px; padding:18px 20px; font-size:14px; line-height:1.7; color:#1e293b; box-shadow:0 1px 3px rgba(0,0,0,0.05); white-space:pre-wrap; border:1px solid #e2e8f0; border-left:4px solid #06b6d4;">
+${inquiryMessage}
+                </div>
+              </div>
+
+              <div style="margin-top:30px; text-align:center;">
+                <a href="mailto:${senderEmail}?subject=Re:%20${encodeURIComponent(inquirySubject)}%20—%20Dentrivo%20Dental%20Care" style="display:inline-block; background:#0284c7; color:#ffffff; font-weight:700; font-size:14px; padding:12px 28px; border-radius:10px; text-decoration:none; box-shadow:0 4px 12px rgba(2,132,199,0.3);">
+                  Reply Directly to ${senderName}
+                </a>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#f8fafc; padding:20px 30px; text-align:center; border-top:1px solid #e2e8f0; font-size:12px; color:#94a3b8;">
+              Dentrivo Dental AI Platform &bull; Automated Inquiry Notification sent to ${targetEmail}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    await this.sendEmail(targetEmail, emailSubject, textBody, htmlBody);
+
+    // Send friendly acknowledgment to the user if a valid email is provided
+    if (senderEmail && senderEmail.includes('@') && !senderEmail.endsWith('@example.com') && !senderEmail.endsWith('@test.com') && !senderEmail.endsWith('.invalid')) {
+      try {
+        const userSubject = `We have received your inquiry — Dentrivo Dental Care`;
+        const userText = `Dear ${senderName},\n\nThank you for reaching out to Dentrivo Dental Care. We have received your inquiry regarding "${inquirySubject}".\n\nOur clinical team reviews all incoming messages and will respond to you within 24 business hours.\n\nWarm regards,\nDentrivo Dental Care Team`;
+        const userHtml = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0; padding:0; background:#f8fafc; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#1e293b;">
+  <table role="presentation" width="100%" style="padding:40px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:560px; background:#ffffff; border-radius:16px; border:1px solid #e2e8f0; overflow:hidden;">
+          <tr>
+            <td style="background:#0284c7; padding:24px 30px; text-align:center;">
+              <h2 style="color:#ffffff; margin:0; font-size:20px; font-weight:700;">Dentrivo Dental Care</h2>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:30px;">
+              <h3 style="color:#0f172a; margin-top:0;">Thank You for Contacting Us, ${senderName}!</h3>
+              <p style="color:#475569; font-size:14px; line-height:1.6;">
+                We have received your inquiry regarding <strong>"${inquirySubject}"</strong>. Our clinical team reviews all incoming messages and will get back to you within 24 business hours.
+              </p>
+              <div style="background:#f1f5f9; border-radius:8px; padding:16px; margin:20px 0; font-size:13px; color:#334155;">
+                <strong>Your Message:</strong>
+                <p style="margin:6px 0 0 0; white-space:pre-wrap;">${inquiryMessage}</p>
+              </div>
+              <p style="color:#64748b; font-size:13px; margin-bottom:0;">
+                If your inquiry is an emergency, please call our emergency hotline directly at <strong>+91 98765 43211</strong>.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#f8fafc; padding:16px 30px; text-align:center; font-size:12px; color:#94a3b8; border-top:1px solid #e2e8f0;">
+              Dentrivo Dental Clinic &bull; Sindhubhavan Road, Ahmedabad
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+        await this.sendEmail(senderEmail, userSubject, userText, userHtml);
+      } catch (ackError) {
+        console.warn('[NotificationService] Sender acknowledgment email skipped:', ackError.message);
+      }
+    }
+  }
 }
 
 export default new NotificationService();

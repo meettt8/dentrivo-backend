@@ -55,6 +55,8 @@ router.get(['/services', '/public/services'], publicCms.getPublicServices);
 router.get(['/why-choose-us', '/public/why-choose-us'], publicCms.getPublicWhyChooseUs);
 router.get(['/privacy-policy', '/public/privacy-policy'], publicCms.getPublicPrivacyPolicy);
 router.get(['/cookie-policy', '/public/cookie-policy'], publicCms.getPublicCookiePolicy);
+router.get(['/contact-page', '/public/contact-page', '/contact', '/contact-us', '/public/contact-us'], publicCms.getPublicContactPage);
+router.post(['/contact', '/public/contact', '/contact/inquiry', '/public/contact/inquiry'], publicCms.submitContactInquiry);
 
 // ── Session, Auth & Password Reset ────────────────────────────────────
 router.get('/session', authController.session);
@@ -158,6 +160,14 @@ router.post('/admin/cookie-policy/publish', requireClinicAdmin, adminCms.publish
 
 // CMS Media & Icon Upload
 router.post('/admin/cms/upload', requireClinicAdmin, upload.single('image'), adminCms.uploadMedia);
+
+// Contact Us Page Management & Inquiries
+router.get('/admin/contact-page', requireClinicAdmin, adminCms.getContactPageAdmin);
+router.put('/admin/contact-page', requireClinicAdmin, adminCms.updateContactPage);
+router.post('/admin/contact-page/publish', requireClinicAdmin, adminCms.publishContactPage);
+router.get('/admin/contact-inquiries', requireClinicAdmin, adminCms.getContactInquiries);
+router.patch('/admin/contact-inquiries/:id/status', requireClinicAdmin, adminCms.updateContactInquiryStatus);
+router.delete('/admin/contact-inquiries/:id', requireClinicAdmin, adminCms.deleteContactInquiry);
 
 
 // ── Doctor ────────────────────────────────────────────────────────────

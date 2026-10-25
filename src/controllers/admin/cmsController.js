@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import config from '../../config/index.js';
 import {
-  CookiePolicy, PrivacyPolicy, ServiceCard, WhyChooseUsCard,
+  ContactInquiry, ContactPage, CookiePolicy, PrivacyPolicy, ServiceCard, WhyChooseUsCard,
 } from '../../models/index.js';
 import {
-  DEFAULT_COOKIE_POLICY, DEFAULT_PRIVACY_POLICY, DEFAULT_SERVICES, DEFAULT_WHY_CHOOSE_US,
+  DEFAULT_CONTACT_PAGE, DEFAULT_COOKIE_POLICY, DEFAULT_PRIVACY_POLICY, DEFAULT_SERVICES, DEFAULT_WHY_CHOOSE_US,
 } from '../../utils/defaultCmsData.js';
 import { abort } from '../../utils/http.js';
 import { sanitizeHtml } from '../../utils/sanitize.js';
@@ -571,5 +571,225 @@ export async function uploadMedia(req, res) {
     message: 'Image uploaded successfully.',
     url: publicUrl,
     filename: fileName,
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 6. CONTACT US PAGE MANAGEMENT & INQUIRIES
+// ══════════════════════════════════════════════════════════════════════
+
+export async function getContactPageAdmin(req, res) {
+  let page = await ContactPage.findOne({});
+  if (!page) {
+    page = await ContactPage.create(DEFAULT_CONTACT_PAGE);
+  }
+
+  let workingHours = page.working_hours || page.workingHours || [];
+  if (typeof workingHours === 'string') {
+    try { workingHours = JSON.parse(workingHours); } catch { workingHours = []; }
+  }
+
+  let features = page.features || [];
+  if (typeof features === 'string') {
+    try { features = JSON.parse(features); } catch { features = []; }
+  }
+
+  return res.json({
+    success: true,
+    page: {
+      ...page,
+      id: String(page._id || page.id),
+      heroBadge: page.hero_badge || page.heroBadge || "We're Here For You",
+      heroTitle: page.hero_title || page.heroTitle || 'Contact Dentrivo Dental Care',
+      heroSubtitle: page.hero_subtitle || page.heroSubtitle || '',
+      clinicName: page.clinic_name || page.clinicName || 'Dentrivo Dental Clinic',
+      address: page.address || 'Sindhubhavan Road, Suite 400, Ahmedabad, Gujarat 380054',
+      phone: page.phone || '+91 98765 43210',
+      emergencyPhone: page.emergency_phone || page.emergencyPhone || '+91 98765 43211',
+      email: page.email || 'info@dentrivo.com',
+      recipientEmail: page.recipient_email || page.recipientEmail || 'noirr.ai13@gmail.com',
+      workingHours: Array.isArray(workingHours) ? workingHours : [],
+      features: Array.isArray(features) ? features : [],
+      mapEmbedUrl: page.map_embed_url || page.mapEmbedUrl || DEFAULT_CONTACT_PAGE.map_embed_url,
+      status: page.status || 'published',
+      updatedAt: page.updated_at || page.updatedAt,
+    },
+  });
+}
+
+export async function updateContactPage(req, res) {
+  const hero_badge = (req.body.heroBadge || req.body.hero_badge || "We're Here For You").trim();
+  const hero_title = (req.body.heroTitle || req.body.hero_title || 'Contact Dentrivo Dental Care').trim();
+  const hero_subtitle = (req.body.heroSubtitle || req.body.hero_subtitle || '').trim();
+  const clinic_name = (req.body.clinicName || req.body.clinic_name || 'Dentrivo Dental Clinic').trim();
+  const address = (req.body.address || '').trim();
+  const phone = (req.body.phone || '').trim();
+  const emergency_phone = (req.body.emergencyPhone || req.body.emergency_phone || '').trim();
+  const email = (req.body.email || '').trim();
+  const recipient_email = (req.body.recipientEmail || req.body.recipient_email || 'noirr.ai13@gmail.com').trim().toLowerCase();
+  const map_embed_url = (req.body.mapEmbedUrl || req.body.map_embed_url || DEFAULT_CONTACT_PAGE.map_embed_url).trim();
+  const status = req.body.status === 'draft' ? 'draft' : 'published';
+
+  const rawWorkingHours = Array.isArray(req.body.workingHours) ? req.body.workingHours : [];
+  const working_hours = rawWorkingHours.map((wh) => ({
+    days: String(wh.days || '').trim(),
+    hours: String(wh.hours || '').trim(),
+    note: String(wh.note || '').trim(),
+  }));
+
+  const rawFeatures = Array.isArray(req.body.features) ? req.body.features : [];
+  const features = rawFeatures.map((f) => ({
+    icon: String(f.icon || 'bi-check-circle').trim(),
+    title: String(f.title || '').trim(),
+    description: String(f.description || '').trim(),
+  }));
+
+  let page = await ContactPage.findOne({});
+  const updateData = {
+    hero_badge,
+    hero_title,
+    hero_subtitle,
+    clinic_name,
+    address,
+    phone,
+    emergency_phone,
+    email,
+    recipient_email,
+    working_hours,
+    features,
+    map_embed_url,
+    status,
+  };
+
+  if (page) {
+    await ContactPage.update(page.id, updateData);
+    page = await ContactPage.findById(page.id);
+  } else {
+    page = await ContactPage.create(updateData);
+  }
+
+  return res.json({
+    success: true,
+    message: status === 'published' ? 'Contact Us page published successfully.' : 'Contact Us page draft saved.',
+    page: {
+      ...page,
+      id: String(page._id || page.id),
+      heroBadge: page.hero_badge,
+      heroTitle: page.hero_title,
+      heroSubtitle: page.hero_subtitle,
+      clinicName: page.clinic_name,
+      address: page.address,
+      phone: page.phone,
+      emergencyPhone: page.emergency_phone,
+      email: page.email,
+      recipientEmail: page.recipient_email,
+      workingHours: page.working_hours,
+      features: page.features,
+      mapEmbedUrl: page.map_embed_url,
+      status: page.status,
+    },
+  });
+}
+
+export async function publishContactPage(req, res) {
+  let page = await ContactPage.findOne({});
+  if (!page) {
+    page = await ContactPage.create({ ...DEFAULT_CONTACT_PAGE, status: 'published' });
+  } else {
+    await ContactPage.update(page.id, { status: 'published' });
+    page = await ContactPage.findById(page.id);
+  }
+
+  return res.json({
+    success: true,
+    message: 'Contact Us page published live successfully.',
+    page,
+  });
+}
+
+export async function getContactInquiries(req, res) {
+  const { search, status } = req.query;
+  const filter = {};
+
+  if (status && ['new', 'in_progress', 'resolved'].includes(status)) {
+    filter.status = status;
+  }
+
+  let inquiries = await ContactInquiry.find(filter, { orderBy: '`created_at` DESC, `id` DESC' });
+
+  if (search && search.trim()) {
+    const term = search.trim().toLowerCase();
+    inquiries = (inquiries || []).filter((inq) => (
+      (inq.name || '').toLowerCase().includes(term) ||
+      (inq.email || '').toLowerCase().includes(term) ||
+      (inq.subject || '').toLowerCase().includes(term) ||
+      (inq.message || '').toLowerCase().includes(term)
+    ));
+  }
+
+  const normalized = (inquiries || []).map((inq) => ({
+    id: String(inq._id || inq.id),
+    name: inq.name || '',
+    email: inq.email || '',
+    phone: inq.phone || '',
+    subject: inq.subject || '',
+    message: inq.message || '',
+    recipientEmail: inq.recipient_email || 'noirr.ai13@gmail.com',
+    status: inq.status || 'new',
+    ipAddress: inq.ip_address || '',
+    createdAt: inq.created_at || inq.createdAt,
+    updatedAt: inq.updated_at || inq.updatedAt,
+  }));
+
+  return res.json({
+    success: true,
+    inquiries: normalized,
+    total: normalized.length,
+    counts: {
+      all: normalized.length,
+      new: normalized.filter((i) => i.status === 'new').length,
+      in_progress: normalized.filter((i) => i.status === 'in_progress').length,
+      resolved: normalized.filter((i) => i.status === 'resolved').length,
+    },
+  });
+}
+
+export async function updateContactInquiryStatus(req, res) {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!['new', 'in_progress', 'resolved'].includes(status)) {
+    abort(422, 'Invalid inquiry status. Allowed: new, in_progress, resolved');
+  }
+
+  const inquiry = await ContactInquiry.findById(id);
+  if (!inquiry) {
+    abort(404, 'Contact inquiry not found.');
+  }
+
+  await ContactInquiry.update(id, { status });
+  const updated = await ContactInquiry.findById(id);
+
+  return res.json({
+    success: true,
+    message: `Inquiry status marked as ${status}.`,
+    inquiry: {
+      ...updated,
+      id: String(updated._id || updated.id),
+    },
+  });
+}
+
+export async function deleteContactInquiry(req, res) {
+  const { id } = req.params;
+  const inquiry = await ContactInquiry.findById(id);
+  if (!inquiry) {
+    abort(404, 'Contact inquiry not found.');
+  }
+
+  await ContactInquiry.delete(id);
+  return res.json({
+    success: true,
+    message: 'Inquiry deleted successfully.',
   });
 }

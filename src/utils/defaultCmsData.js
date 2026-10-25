@@ -257,3 +257,40 @@ export const DEFAULT_COOKIE_POLICY = {
   last_updated: 'October 2026',
   status: 'published',
 };
+
+export const DEFAULT_CONTACT_PAGE = {
+  hero_badge: "We're Here For You",
+  hero_title: 'Contact Dentrivo Dental Care',
+  hero_subtitle: 'Have a question about our dental treatments, AI diagnostics, or appointments? Send us an inquiry and our clinical team will get back to you promptly.',
+  clinic_name: 'Dentrivo Dental Clinic',
+  address: 'Sindhubhavan Road, Suite 400, Ahmedabad, Gujarat 380054',
+  phone: '+91 98765 43210',
+  emergency_phone: '+91 98765 43211',
+  email: 'info@dentrivo.com',
+  recipient_email: 'noirr.ai13@gmail.com',
+  working_hours: [
+    { days: 'Monday – Friday', hours: '8:00 AM – 7:00 PM', note: 'General & AI Diagnostics' },
+    { days: 'Saturday', hours: '9:00 AM – 5:00 PM', note: 'Specialist Consultations' },
+    { days: 'Sunday', hours: '10:00 AM – 2:00 PM', note: 'Emergency Triage & Urgent Care' },
+  ],
+  features: [
+    {
+      icon: 'bi-lightning-charge-fill',
+      title: 'Swift Inquiry Response',
+      description: 'Our reception and clinical team review inquiries within 24 business hours.',
+    },
+    {
+      icon: 'bi-robot',
+      title: '24/7 AI Dental Receptionist',
+      description: 'Need instant triage, answers, or late-night booking? Our AI chatbot is always active.',
+    },
+    {
+      icon: 'bi-shield-check',
+      title: 'Confidential & Secure',
+      description: 'All patient communications are safeguarded according to high medical privacy standards.',
+    },
+  ],
+  map_embed_url: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3671.697915724503!2d72.5074210759082!3d23.03487091590748!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x395e84f4f728952b%3A0x600100d02467362a!2sSindhubhavan%20Marg%2C%20Ahmedabad%2C%20Gujarat!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin',
+  status: 'published',
+};
+
