@@ -11,7 +11,8 @@
     "migrate": "node src/scripts/migrate.js",
     "seed": "node src/scripts/seed.js",
     "test": "node test/smoke.mjs",
-    "test:ui": "node test/uicheck.mjs"
+    "test:ui": "node test/uicheck.mjs",
+    "test:mail": "node src/scripts/test-mail.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

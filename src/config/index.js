@@ -54,13 +54,13 @@ const config = {
     storagePath: process.env.STORAGE_PATH || './storage',
   },
   mail: {
-    mailer: process.env.MAIL_MAILER || 'log',
-    host: process.env.MAIL_HOST,
-    port: Number(process.env.MAIL_PORT || 2525),
+    mailer: process.env.MAIL_MAILER || 'smtp',
+    host: process.env.MAIL_HOST || 'smtp-relay.brevo.com',
+    port: Number(process.env.MAIL_PORT || 587),
     username: process.env.MAIL_USERNAME,
     password: process.env.MAIL_PASSWORD,
-    fromAddress: process.env.MAIL_FROM_ADDRESS || 'hello@example.com',
-    fromName: process.env.MAIL_FROM_NAME || 'Dentrivo',
+    fromAddress: process.env.MAIL_FROM_ADDRESS,
+    fromName: process.env.MAIL_FROM_NAME,
   },
   services: {
     razorpay: {

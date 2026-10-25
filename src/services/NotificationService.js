@@ -506,18 +506,37 @@ class NotificationService {
     if (config.mail.mailer === 'log') return null;
     const user = config.mail.username;
     const pass = config.mail.password;
+    const host = config.mail.host || 'smtp-relay.brevo.com';
+    const port = Number(config.mail.port || 587);
 
     if (!this.transporter || this.lastUser !== user || this.lastPass !== pass) {
       this.lastUser = user;
       this.lastPass = pass;
       this.transporter = nodemailer.createTransport({
-        host: config.mail.host,
-        port: config.mail.port,
-        secure: config.mail.port === 465,
-        auth: user ? { user, pass } : undefined,
+        host,
+        port,
+        secure: port === 465,
+        auth: (user && pass) ? { user, pass } : undefined,
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
       });
     }
     return this.transporter;
+  }
+
+  /** Verify SMTP connection and authentication status */
+  async verifyConnection() {
+    const transport = this.mailer();
+    if (!transport) {
+      return { success: false, message: 'Mailer is set to log mode. SMTP is disabled.' };
+    }
+    try {
+      await transport.verify();
+      return { success: true, message: 'SMTP connection successfully established and authenticated.' };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
   }
 
   /** Send a notification through the specified channel. */
