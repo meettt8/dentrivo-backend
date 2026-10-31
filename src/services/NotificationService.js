@@ -1,5 +1,5 @@
-import nodemailer from 'nodemailer';
 import dayjs from 'dayjs';
+import { sendEmail } from '../utils/mailer.js';
 import config from '../config/index.js';
 import { Clinic, NotificationLog, NotificationTemplate } from '../models/index.js';
 
@@ -496,44 +496,26 @@ export function getTreatmentReminderEmailHtml(appointment, patient, treatment, d
  * Multi-channel notifications with templates, delivery tracking, and retry.
  */
 class NotificationService {
-  constructor() {
-    this.transporter = null;
-    this.lastUser = null;
-    this.lastPass = null;
-  }
-
-  mailer() {
-    if (config.mail.mailer === 'log') return null;
-    const user = config.mail.username;
-    const pass = config.mail.password;
-    const host = config.mail.host || 'smtp-relay.brevo.com';
-    const port = Number(config.mail.port || 587);
-
-    if (!this.transporter || this.lastUser !== user || this.lastPass !== pass) {
-      this.lastUser = user;
-      this.lastPass = pass;
-      this.transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: (user && pass) ? { user, pass } : undefined,
-        pool: true,
-        maxConnections: 5,
-        maxMessages: 100,
-      });
-    }
-    return this.transporter;
-  }
-
-  /** Verify SMTP connection and authentication status */
+  /** Verify Brevo HTTP API connection and authentication status */
   async verifyConnection() {
-    const transport = this.mailer();
-    if (!transport) {
-      return { success: false, message: 'Mailer is set to log mode. SMTP is disabled.' };
+    const apiKey = process.env.BREVO_API_KEY;
+    const mailFrom = process.env.MAIL_FROM || process.env.MAIL_FROM_ADDRESS;
+    if (!apiKey) {
+      return { success: false, message: 'BREVO_API_KEY is not set.' };
+    }
+    if (!mailFrom) {
+      return { success: false, message: 'MAIL_FROM is not set.' };
     }
     try {
-      await transport.verify();
-      return { success: true, message: 'SMTP connection successfully established and authenticated.' };
+      const res = await fetch('https://api.brevo.com/v3/account', {
+        headers: { 'api-key': apiKey, accept: 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        return { success: false, message: `Brevo API HTTP ${res.status}: ${await res.text()}` };
+      }
+      const data = await res.json();
+      return { success: true, message: `Brevo HTTP API verified successfully (${data.email || 'authenticated'}).` };
     } catch (error) {
       return { success: false, message: error.message };
     }
@@ -652,9 +634,9 @@ class NotificationService {
     if (!patient?.email) return;
 
     const emailTo = String(patient.email).trim().toLowerCase();
-    // Guard against dummy RFC test domains to prevent Google SMTP delivery bounce errors
+    // Guard against dummy RFC test domains to prevent delivery bounce errors
     if (emailTo.endsWith('@example.com') || emailTo.endsWith('@test.com') || emailTo.endsWith('.invalid')) {
-      console.log(`[NotificationService] Skipping live SMTP delivery to dummy demo email: ${emailTo}. Booking notification logged.`);
+      console.log(`[NotificationService] Skipping live delivery to dummy demo email: ${emailTo}. Booking notification logged.`);
       return;
     }
 
@@ -679,7 +661,7 @@ class NotificationService {
 
     const emailTo = String(patient.email).trim().toLowerCase();
     if (emailTo.endsWith('@example.com') || emailTo.endsWith('@test.com') || emailTo.endsWith('.invalid')) {
-      console.log(`[NotificationService] Skipping live SMTP reminder to dummy demo email: ${emailTo}.`);
+      console.log(`[NotificationService] Skipping live reminder to dummy demo email: ${emailTo}.`);
       return;
     }
 
@@ -698,42 +680,24 @@ class NotificationService {
     );
   }
 
-  /** Send email supporting plain text, rich HTML, and attachments */
+  /** Send email supporting plain text, rich HTML, and attachments via Brevo HTTP API */
   async sendEmail(to, subject, textBody, htmlBody = null, attachments = []) {
     const emailTo = String(to || '').trim().toLowerCase();
     if (!emailTo) return;
 
-    // Skip SMTP delivery for dummy or test domain emails to avoid Mail Delivery Subsystem bounces
+    // Skip delivery for dummy or test domain emails to avoid bounces
     if (emailTo.endsWith('@example.com') || emailTo.endsWith('@test.com') || emailTo.endsWith('.invalid')) {
-      console.log(`[NotificationService] Skipping live SMTP delivery to dummy demo email: ${emailTo} (Subject: ${subject})`);
+      console.log(`[NotificationService] Skipping live delivery to dummy demo email: ${emailTo} (Subject: ${subject})`);
       return;
     }
 
-    const transport = this.mailer();
-    const fromAddr = config.mail.fromAddress || config.mail.username || 'noreply@dentrivo.com';
-    const fromHeader = `"${config.mail.fromName}" <${fromAddr}>`;
-
-    if (!transport) {
-      console.log(`Email to ${to} — ${subject}: ${textBody}`);
-      return;
-    }
-
-    const mailOptions = {
-      from: fromHeader,
-      to,
+    return sendEmail({
+      to: emailTo,
       subject,
       text: textBody,
-    };
-
-    if (htmlBody) {
-      mailOptions.html = htmlBody;
-    }
-
-    if (attachments && attachments.length > 0) {
-      mailOptions.attachments = attachments;
-    }
-
-    await transport.sendMail(mailOptions);
+      html: htmlBody || undefined,
+      attachments,
+    });
   }
 
   async sendSms(to, message) {

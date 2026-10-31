@@ -1,6 +1,7 @@
 import config from '../config/index.js';
 import { Patient } from '../models/index.js';
-import notificationService, { getOtpEmailHtml } from './NotificationService.js';
+import { getOtpEmailHtml } from './NotificationService.js';
+import { sendEmail } from '../utils/mailer.js';
 
 /** In-memory OTP storage map: key -> { code, channel, expiresAt, attempts, patient, keys } */
 const otpStore = new Map();
@@ -93,21 +94,17 @@ class OtpService {
     const { code } = this.createOtp(patient, identifier, 'email');
     const messageText = `Your Dentrivo login OTP is ${code}. Valid for 5 minutes. Do not share this code with anyone.`;
 
-    console.log('====================================================');
-    console.log(`[EMAIL OTP LOG] To: ${patient.email}`);
-    console.log(`[EMAIL OTP MESSAGE]: ${messageText}`);
-    console.log('====================================================');
-
     const patientName = patient?.name || 'Patient';
     const subject = 'Dentrivo - Your Login Verification Code';
     const htmlBody = getOtpEmailHtml(code, patientName);
 
-    // If SMTP is enabled, send real email via NotificationService with rich HTML template
-    if (config.mail.mailer === 'smtp') {
-      await notificationService.sendEmail(patient.email, subject, messageText, htmlBody).catch((err) => {
-        console.warn('SMTP Email delivery warning:', err.message);
-      });
-    }
+    // Send email via Brevo HTTP API (10s timeout, raises on failure)
+    await sendEmail({
+      to: patient.email,
+      subject,
+      text: messageText,
+      html: htmlBody,
+    });
 
     return {
       success: true,

@@ -117,7 +117,15 @@ export async function patientLogin(req, res) {
   }
 
   // Password verified! Generate and send OTP to Patient's email
-  await otpService.sendOtp(user.email, 'email');
+  try {
+    await otpService.sendOtp(user.email, 'email');
+  } catch (err) {
+    console.error('Failed to dispatch login OTP email:', err.message);
+    return res.status(502).json({
+      message: 'Failed to send OTP verification email. Please try again in a few moments.',
+      error: err.message,
+    });
+  }
 
   return res.json({
     success: true,
@@ -147,7 +155,17 @@ export async function sendPatientOtp(req, res) {
       recipient: result.recipient,
     });
   } catch (error) {
-    throw new ValidationError({ identifier: [error.message] });
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    if (error.message && error.message.includes('No registered patient account found')) {
+      throw new ValidationError({ identifier: [error.message] });
+    }
+    console.error('Failed to send patient OTP email:', error.message);
+    return res.status(502).json({
+      message: 'Failed to send OTP verification email. Please try again in a few moments.',
+      error: error.message,
+    });
   }
 }
 
@@ -332,10 +350,10 @@ export async function forgotPassword(req, res) {
   console.log(`[RESET LINK]: ${resetLink}`);
   console.log('====================================================');
 
-  if (config.mail.mailer === 'smtp') {
-    await notificationService.send('password_reset', 'email', email, {}, messageText).catch((err) => {
-      console.warn('SMTP Password Reset delivery warning:', err.message);
-    });
+  try {
+    await notificationService.send('password_reset', 'email', email, {}, messageText);
+  } catch (err) {
+    console.warn('Password Reset email delivery warning:', err.message);
   }
 
   return res.json({
